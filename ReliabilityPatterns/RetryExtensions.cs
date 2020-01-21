@@ -14,10 +14,10 @@ namespace ReliabilityPatterns
                 circuitBreaker,
                 operation,
                 new RetryOptions
-                    {
-                        AllowedRetries = allowedRetries,
-                        RetryInterval = retryInterval
-                    });
+                {
+                    AllowedRetries = allowedRetries,
+                    RetryInterval = retryInterval
+                });
         }
 
         public static TResult ExecuteWithRetries<TResult>(this CircuitBreaker circuitBreaker, Func<TResult> operation,
@@ -31,12 +31,9 @@ namespace ReliabilityPatterns
             {
                 try
                 {
-                    if (!circuitBreaker.AllowedToAttemptExecute)
-                    {
-                        attempts = handleFailure(null);
-                        continue;
-                    }
-                    return circuitBreaker.Execute(operation);
+                    if (circuitBreaker.AllowedToAttemptExecute)
+                        return circuitBreaker.Execute(operation);
+                    attempts = handleFailure(null);
                 }
                 catch (OperationFailedException ex)
                 {
@@ -46,7 +43,7 @@ namespace ReliabilityPatterns
             return default(TResult);
         }
 
-        private static Func<Exception,int> HandleFailure(RetryOptions retryOptions, ICollection<Exception> exceptions, int attempts)
+        private static Func<Exception, int> HandleFailure(RetryOptions retryOptions, ICollection<Exception> exceptions, int attempts)
         {
             return ex =>
                        {

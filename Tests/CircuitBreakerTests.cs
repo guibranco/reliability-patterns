@@ -1,9 +1,9 @@
-﻿using System;
+﻿using NUnit.Framework;
+using ReliabilityPatterns;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NUnit.Framework;
-using ReliabilityPatterns;
 
 namespace Tests
 {
@@ -64,96 +64,106 @@ namespace Tests
             return circuitBreaker.ServiceLevel;
         }
 
-		[Test]
-		[TestCase("", Result = 100d)]
-		[TestCase("bad", Result = 80d)]
-		[TestCase("bad good", Result = 100d)]
-		[TestCase("bad bad", Result = 60d)]
-		[TestCase("bad bad good", Result = 80d)]
-		[TestCase("bad bad good good", Result = 100d)]
-		[TestCase("bad good bad good", Result = 100d)]
-		public double ServiceLevelAsync(string callPattern)
-		{
-			var task = Task.Run<double>(async () => {
+        [Test]
+        [TestCase("", Result = 100d)]
+        [TestCase("bad", Result = 80d)]
+        [TestCase("bad good", Result = 100d)]
+        [TestCase("bad bad", Result = 60d)]
+        [TestCase("bad bad good", Result = 80d)]
+        [TestCase("bad bad good good", Result = 100d)]
+        [TestCase("bad good bad good", Result = 100d)]
+        public double ServiceLevelAsync(string callPattern)
+        {
+            var task = Task.Run(async () =>
+            {
 
-				var circuitBreaker = new CircuitBreaker ();
+                var circuitBreaker = new CircuitBreaker();
 
-				foreach (var call in callPattern.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) {
+                foreach (var call in callPattern.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                {
 
-					switch (call) {
-					case "good":
-						await circuitBreaker.ExecuteAsync (async () => {
-							await Task.FromResult (0);
-						});
-						break;
-					case "bad":
-						try { 
-							await circuitBreaker.ExecuteAsync (async () => {
-								await Task.FromResult (0);
-								throw new Exception ();
-							}); 
-						} catch (OperationFailedException) {
-						}
-						break;
-					default:
-						Assert.Fail ("Unknown call sequence");
-						break;
-					}
-				}
-				return circuitBreaker.ServiceLevel;
-			});
+                    switch (call)
+                    {
+                        case "good":
+                            await circuitBreaker.ExecuteAsync(async () =>
+                            {
+                                await Task.FromResult(0);
+                            });
+                            break;
+                        case "bad":
+                            try
+                            {
+                                await circuitBreaker.ExecuteAsync(async () =>
+                                {
+                                    await Task.FromResult(0);
+                                    throw new Exception();
+                                });
+                            }
+                            catch (OperationFailedException)
+                            {
+                            }
+                            break;
+                        default:
+                            Assert.Fail("Unknown call sequence");
+                            break;
+                    }
+                }
+                return circuitBreaker.ServiceLevel;
+            });
 
-			return task.Result;
-		}
-			
-		[Test]
-		public void WhenExecutingAsyncTresholdMayBeExceeded()
-		{
-			int totalTasks = 10;
-			uint threshold = 2;
+            return task.Result;
+        }
 
-			var circuitBreaker = new CircuitBreaker (threshold, TimeSpan.FromHours(1));
+        [Test]
+        public void WhenExecutingAsyncTresholdMayBeExceeded()
+        {
+            int totalTasks = 10;
+            uint threshold = 2;
 
-			int operationFailed = 0;
-			int operationFailedExceptions = 0;
-			int openCircuitExceptions = 0;
+            var circuitBreaker = new CircuitBreaker(threshold, TimeSpan.FromHours(1));
 
-			Task[] tasks = new Task[totalTasks];
+            int operationFailed = 0;
+            int operationFailedExceptions = 0;
+            int openCircuitExceptions = 0;
 
-			for (int i = 0; i < totalTasks; i++) 
-			{
-				tasks[i] = Task.Run(async () => {
-					await circuitBreaker.ExecuteAsync (async () => {
-						await Task.FromResult(0);
-						await Task.Delay(1);
-						Interlocked.Increment(ref operationFailed);
-						throw new Exception();
-					});
-				});
-			}
+            Task[] tasks = new Task[totalTasks];
 
-			// wait all tasks not throwing errors
-			try
-			{
-				Task.WaitAll(tasks);
-			}
-			catch (AggregateException ae)
-			{
-				openCircuitExceptions = ae.InnerExceptions.Count(c => c is OpenCircuitException);
-				operationFailedExceptions = ae.InnerExceptions.Count(c => c is OperationFailedException);
-			}
+            for (int i = 0; i < totalTasks; i++)
+            {
+                tasks[i] = Task.Run(async () =>
+                {
+                    await circuitBreaker.ExecuteAsync(async () =>
+                    {
+                        await Task.FromResult(0);
+                        await Task.Delay(1);
+                        Interlocked.Increment(ref operationFailed);
+                        throw new Exception();
+                    });
+                });
+            }
 
-			int openCircuitCount = totalTasks - operationFailed;
+            // wait all tasks not throwing errors
+            try
+            {
+                Task.WaitAll(tasks);
+            }
+            catch (AggregateException ae)
+            {
+                openCircuitExceptions = ae.InnerExceptions.Count(c => c is OpenCircuitException);
+                operationFailedExceptions = ae.InnerExceptions.Count(c => c is OperationFailedException);
+            }
 
-			// pretty sure circuit is open at this stage
-			Assert.IsFalse(circuitBreaker.AllowedToAttemptExecute);
+            int openCircuitCount = totalTasks - operationFailed;
 
-			Assert.AreEqual(openCircuitCount, openCircuitExceptions);
-			Assert.AreEqual(operationFailed, operationFailedExceptions);
+            // pretty sure circuit is open at this stage
+            Assert.IsFalse(circuitBreaker.AllowedToAttemptExecute);
 
-			// however several arriving requests might have entered the curcuit
-			// before the previous one's failures were tracked!
-			Assert.GreaterOrEqual(operationFailed, threshold);
-		}
+            Assert.AreEqual(openCircuitCount, openCircuitExceptions);
+            Assert.AreEqual(operationFailed, operationFailedExceptions);
+
+            // however several arriving requests might have entered the curcuit
+            // before the previous one's failures were tracked!
+            Assert.GreaterOrEqual(operationFailed, threshold);
+        }
     }
 }
